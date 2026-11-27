@@ -28,14 +28,17 @@ docker compose up -d          # 构建并后台启动
 docker compose logs -f        # 看日志
 ```
 
-打开 <http://localhost:8080>，输入刚才的密钥就能看画面。
+打开 <http://localhost:39110>，输入刚才的密钥就能看画面。
+
+> 默认端口 **39110**（宿主机和容器内一致）。要改端口，在 `.env` 里设
+> `HOST_PORT=xxxxx`，`docker compose` 和 `update.sh` 会同时跟随。
 
 不用 compose 也可以：
 
 ```bash
 docker build -t bilimouse-cam-server .
 docker run -d --name bilimouse-cam-server \
-  -p 8080:8080 -v "$(pwd)/data:/data" \
+  -p 39110:39110 -v "$(pwd)/data:/data" \
   -e CAM_API_KEY='你生成的密钥' \
   bilimouse-cam-server
 ```
@@ -46,7 +49,7 @@ docker run -d --name bilimouse-cam-server \
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 export CAM_API_KEY='你生成的密钥'
-uvicorn app.main:app --reload --port 8080
+uvicorn app.main:app --reload --port 39110
 ```
 
 ---
@@ -86,7 +89,8 @@ chmod +x update.sh
 | `--wait 60` | 健康检查最多等 60 秒（默认 30 秒） |
 | `--prune` | 完成后清理悬空镜像 |
 
-改过端口就带上环境变量，例如 `PORT=8090 ./update.sh`（另有 `COMPOSE_FILE`、
+改端口请改 `.env` 里的 `HOST_PORT`（compose 映射和脚本健康检查会一起变）；
+`PORT=xxxxx` 只用于临时覆盖健康检查探测的端口。另有 `COMPOSE_FILE`、
 `SERVICE`、`IMAGE` 可覆盖默认值）。要定时自动更新可以挂 cron：
 
 ```cron
@@ -125,7 +129,7 @@ chmod +x update.sh
 `?key=` 默认禁用（`ALLOW_KEY_IN_QUERY=0`）：URL 会进浏览器历史和 access log。
 只有 VLC 之类只能填 URL 的播放器才需要打开，且仅限可信网络。
 
-> 这是**局域网 HTTP 服务**，密钥是明文传输的。别把 8080 直接映射到公网；
+> 这是**局域网 HTTP 服务**，密钥是明文传输的。别把 39110 直接映射到公网；
 > 要从外网访问，请前面挂 HTTPS 反向代理（同时设 `COOKIE_SECURE=1`），
 > 或放进 VPN / Tailscale 之类的内网。
 
@@ -147,13 +151,14 @@ chmod +x update.sh
 2. 在设备串口里设置**地址和密钥**（一次就够，都存进 NVS）：
 
    ```
-   bilimouse> cam url http://192.168.1.100:8080
-   url saved: http://192.168.1.100:8080
+   bilimouse> cam url http://192.168.1.100:39110
+   url saved: http://192.168.1.100:39110
    bilimouse> cam key 你生成的密钥
    key saved (len=32, value hidden)
    ```
 
-   只填到端口即可，服务端会自动补 `/api/frame`。密钥必须和服务端 `.env`
+   只填到端口即可，服务端会自动补 `/api/frame`。端口默认 39110，
+   服务端改过 `HOST_PORT` 这里也要跟着改。密钥必须和服务端 `.env`
    里的 `CAM_API_KEY` **完全一致**；串口不会回显（`cam key` 只显示
    「已配置/未配置」），`cam key clear` 可以清掉。
 
@@ -161,7 +166,7 @@ chmod +x update.sh
    （也可以直接用串口：`cam start`）
    没配地址/密钥时按钮会直接提示，不会白跑一趟；屏上还会显示「密钥 已配置」。
 
-4. 设备状态变成「推流中」后，浏览器刷新 <http://192.168.1.100:8080> 就能看到画面。
+4. 设备状态变成「推流中」后，浏览器刷新 <http://192.168.1.100:39110> 就能看到画面。
 
 ---
 
@@ -185,6 +190,8 @@ chmod +x update.sh
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `CAM_API_KEY` | **必填** | 推流密钥，设备端 `cam key` 要用同一个值；没配则 `/api/frame` 返回 503 |
+| `HOST_PORT` | `39110` | `.env` / compose 专用：宿主机对外端口，改它 compose 与 `update.sh` 同时跟随 |
+| `PIP_INDEX_URL` | 清华源 | `.env` / 构建专用：pip 镜像源，仅 `docker build` 时生效 |
 | `PROTECT_VIEW` | `1` | 观看端是否也要鉴权；设 `0` 仅用于可信内网调试 |
 | `ALLOW_KEY_IN_QUERY` | `0` | 允许 `?key=` 传密钥（VLC 等播放器用；URL 会进日志，谨慎开） |
 | `COOKIE_SECURE` | `0` | 前面有 HTTPS 反代时设 `1`，给 cookie 加 Secure |
@@ -225,9 +232,40 @@ environment:
 如果设备端改了打包方式（比如换成 RGB888），服务端需要同步改
 `rgb565_to_jpeg()`。
 
+**构建一开始就报 `registry-1.docker.io ... EOF`？**
+国内拉 Docker Hub 基础镜像元数据也常断。在 `.env` 里换基础镜像源即可，
+默认仍是官方地址、不影响海外机器：
+
+```bash
+BASE_IMAGE=docker.m.daocloud.io/library/python:3.12-slim
+./update.sh --build
+```
+
+也可以先手动 `docker pull python:3.12-slim` 多试几次；已有可用镜像时
+`./update.sh --no-build` 能直接跳过构建重启服务。
+
+**构建时 `pip install` 报 `Read timed out` / `exit code 2`？**
+国内直连 `files.pythonhosted.org` 拉依赖经常超时。镜像默认已改走清华 PyPI 源，
+并放宽到 `--timeout 60 --retries 10`；若还失败，在 `.env` 里换源后重建：
+
+```bash
+# 阿里云 / 官方源 / 公司内网镜像，任选一个写进 .env 的 PIP_INDEX_URL
+PIP_INDEX_URL=https://mirrors.aliyun.com/pypi/simple
+./update.sh --build
+```
+
+单独构建也可以直接传参：
+`docker build --build-arg PIP_INDEX_URL=https://pypi.org/simple -t bilimouse-cam-server .`
+（海外机器建议切回官方源。已有可用镜像时加 `--no-build` 可跳过构建直接重启。）
+
+**改端口后访问不到 / `update.sh` 健康检查失败？**
+改 `.env` 的 `HOST_PORT` 即可，compose 映射和脚本探测会同时变；
+只在命令行写 `PORT=xxxx` 而不改 `HOST_PORT` 会造成两边不一致。
+
 **看不到画面？**
 先看服务端日志有没有 `frame #N`。没有日志 = 设备根本没发过来，
-检查：设备 WiFi 是否连上同一个网段、URL 里的 IP 对不对、8080 端口通不通。
+检查：设备 WiFi 是否连上同一个网段、URL 里的 IP 对不对、39110 端口通不通、
+设备 `cam url` 里的端口有没有跟着改。
 
 **画面卡住不动？**
 设备到服务端的连接断了。设备串口 `cam status` 能看到 frames/fails 计数。

@@ -15,8 +15,9 @@
 #   ./update.sh --help
 #
 # 环境变量:
-#   PORT=8080              宿主机端口（健康检查用，需与 compose 的端口映射一致）
-#   CONTAINER_PORT=8080    容器内端口（宿主机没有 curl 时的兜底检查用）
+#   HOST_PORT=39110        改端口请写进 .env，compose 和本脚本会同时跟随
+#   PORT=39110             临时覆盖「健康检查探测的宿主机端口」（一般不用设）
+#   CONTAINER_PORT=39110   容器内端口（宿主机没有 curl 时的兜底检查用）
 #   COMPOSE_FILE=...       指定 compose 文件（默认 docker-compose.yml）
 #   SERVICE=cam-server     compose 里的服务名
 #   IMAGE=bilimouse-cam-server:latest   compose 构建出的镜像名（判断是否需要构建）
@@ -61,8 +62,14 @@ if ((FORCE_BUILD && NO_BUILD)); then
     die "--build 和 --no-build 不能同时用"
 fi
 
-PORT="${PORT:-8080}"
-CONTAINER_PORT="${CONTAINER_PORT:-8080}"
+# 端口优先级：命令行 PORT > .env 里的 HOST_PORT > 默认 39110。
+# compose 读同一个 .env 的 HOST_PORT，两边永远一致，不会健康检查打错端口。
+HOST_PORT=""
+if [[ -f .env ]]; then
+    HOST_PORT="$(grep -E '^[[:space:]]*HOST_PORT=' .env | tail -n 1 | cut -d= -f2 | tr -dc '0-9')" || HOST_PORT=""
+fi
+PORT="${PORT:-${HOST_PORT:-39110}}"
+CONTAINER_PORT="${CONTAINER_PORT:-39110}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 SERVICE="${SERVICE:-cam-server}"
 IMAGE="${IMAGE:-bilimouse-cam-server:latest}"
@@ -164,9 +171,9 @@ if ((DO_BUILD)); then
 else
     BUILD_TXT=no
 fi
-log "启动服务（build=$BUILD_TXT）..."
+log "启动服务（build=$BUILD_TXT，host port=$PORT）..."
 if ! "${COMPOSE[@]}" up "${UP_ARGS[@]}"; then
-    die "启动失败。若日志里是 Docker Hub 拉 python:3.12-slim 超时（国内常见），可先手动 'docker pull python:3.12-slim'，或代码无更新时用 --no-build 直接重启"
+    die "启动失败。若日志里是 pip 拉包超时，在 .env 里设 PIP_INDEX_URL 换国内源后重试；若是 Docker Hub 拉 python:3.12-slim 超时（国内常见），可先手动 'docker pull python:3.12-slim'，或代码无更新时用 --no-build 直接重启"
 fi
 
 # ---------- 健康检查 ----------
@@ -194,7 +201,7 @@ done
 if ((!OK)); then
     warn "健康检查未通过，最近的日志："
     "${COMPOSE[@]}" logs --tail=80 || true
-    die "服务启动失败，请检查上面的日志（常见原因：8080 端口被占用、镜像构建失败）"
+    die "服务启动失败，请检查上面的日志（常见原因：${PORT} 端口被占用、镜像构建失败、.env 的 HOST_PORT 与 PORT 不一致）"
 fi
 
 if ((PRUNE)); then
