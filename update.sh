@@ -14,6 +14,10 @@
 #   ./update.sh --prune         更新完成后清理悬空镜像
 #   ./update.sh --help
 #
+# 关于 .env（含 CAM_API_KEY）：脚本全程只读不写、绝不 cp .env.example 覆盖，
+# 更新前后还会整份备份/比对，一旦被改动就自动恢复并打印密钥指纹。
+# 录制文件在 data/recordings/，属于运行时数据，不在 git 跟踪范围，更新不受影响。
+#
 # 环境变量:
 #   HOST_PORT=39110        改端口请写进 .env，compose 和本脚本会同时跟随
 #   PUBLIC_URL=...         服务器对外地址（公网 IP/域名），用于打印设备端该填的 URL
@@ -33,6 +37,28 @@ log()  { printf '\033[1;36m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!! \033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[1;31mxx \033[0m %s\n' "$*" >&2; exit 1; }
 trap 'rc=$?; printf "\033[1;31mxx \033[0m 脚本在第 %s 行失败 (exit %s)\n" "$LINENO" "$rc" >&2' ERR
+
+# .env 备份文件（更新前）。EXIT 时清理，绝不残留。
+ENV_BAK=""
+cleanup_env_bak() { [[ -n "$ENV_BAK" && -f "$ENV_BAK" ]] && rm -f "$ENV_BAK"; return 0; }
+trap cleanup_env_bak EXIT
+
+# 打印某个 .env 文件里 CAM_API_KEY 的短指纹（不泄露密钥明文），
+# 用来向用户证明「更新前后密钥没被换掉」。
+key_fingerprint() {
+    local f="$1" k
+    [[ -f "$f" ]] || { printf '(无 .env)'; return 0; }
+    k="$(sed -n 's/^[[:space:]]*CAM_API_KEY[[:space:]]*=[[:space:]]*//p' "$f" \
+         | tail -n 1 | tr -d '\r')"
+    [[ -n "$k" ]] || { printf '(未配置)'; return 0; }
+    if command -v sha256sum >/dev/null 2>&1; then
+        printf '%s' "$k" | sha256sum | cut -c1-8
+    elif command -v shasum >/dev/null 2>&1; then
+        printf '%s' "$k" | shasum -a 256 | cut -c1-8
+    else
+        printf '%s' "$k" | cksum | cut -d' ' -f1
+    fi
+}
 
 # 无论从哪个目录调用，都切到脚本所在目录（仓库根目录）
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -105,9 +131,28 @@ if [[ -z "${CAM_API_KEY:-}" ]]; then
     fi
 fi
 
+# ---------- 保护本地 .env（绝不替换用户已有的密钥）----------
+# 平时 .env 被 .gitignore 排除，git pull / reset --hard 都不会动它。
+# 但万一远端误把 .env 提交进仓库，--force 的 reset --hard 就会用远端版本
+# 覆盖本地密钥。所以更新前先整份备份 + 记下密钥指纹，更新后逐字节比对，
+# 有任何变化都无条件恢复成用户原来的那份。
+ENV_FP_BEFORE=""
+if [[ -f .env ]]; then
+    ENV_BAK="$(mktemp "${TMPDIR:-/tmp}/bilimouse-env.XXXXXX")" \
+        || die "无法创建 .env 备份临时文件"
+    cp -p .env "$ENV_BAK" || die "备份 .env 失败"
+    ENV_FP_BEFORE="$(key_fingerprint .env)"
+    log "已备份本地 .env（CAM_API_KEY 指纹 ${ENV_FP_BEFORE}）"
+fi
+
 # ---------- 拉取代码 ----------
 log "拉取远端更新（分支 $BRANCH）..."
 git fetch --prune origin
+
+# 远端若把 .env 纳入版本控制，明确告知：本地版本会被保留、不会被覆盖。
+if git ls-tree -r --name-only "origin/$BRANCH" 2>/dev/null | grep -qx '.env'; then
+    warn "远端 $BRANCH 里存在被跟踪的 .env；本脚本会在更新后恢复你的本地 .env（密钥不会被替换）"
+fi
 
 # data/ 里的运行时快照是未跟踪文件，不阻塞更新；只检查已跟踪文件
 DIRTY="$(git status --porcelain --untracked-files=no)"
@@ -129,6 +174,25 @@ else
     git pull --ff-only origin "$BRANCH"
 fi
 NEW="$(git rev-parse HEAD)"
+
+# ---------- 校验并恢复 .env ----------
+# 只要 .env 内容有变动（被远端版本覆盖 / 被 pull 删掉），就用备份原样写回。
+# 这样无论远端代码怎么变，用户自己配的 CAM_API_KEY 始终不动。
+if [[ -n "$ENV_BAK" && -f "$ENV_BAK" ]]; then
+    if [[ ! -f .env ]]; then
+        cp -p "$ENV_BAK" .env
+        warn ".env 在更新过程中丢失，已从备份恢复（密钥不变）"
+    elif ! cmp -s .env "$ENV_BAK"; then
+        cp -p "$ENV_BAK" .env
+        warn ".env 在更新过程中被改动，已恢复为更新前的本地版本（密钥不变）"
+    fi
+    ENV_FP_AFTER="$(key_fingerprint .env)"
+    if [[ "$ENV_FP_BEFORE" == "$ENV_FP_AFTER" ]]; then
+        log ".env 密钥保持不变（指纹 ${ENV_FP_AFTER}）"
+    else
+        die ".env 密钥指纹不一致（${ENV_FP_BEFORE} -> ${ENV_FP_AFTER}），已中止，请手动检查 .env"
+    fi
+fi
 
 CHANGED=0
 if [[ "$OLD" == "$NEW" ]]; then

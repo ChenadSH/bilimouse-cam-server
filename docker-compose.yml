@@ -27,9 +27,21 @@ services:
       SAVE_EVERY: "0"
       # 快照目录
       SNAPSHOT_DIR: "/data"
+      # 录制目录（在 /data 卷内，按 YYYY-MM-DD 分子目录）
+      RECORD_DIR: "/data/recordings"
+      # 按需推流：1=只有网页有人/在录制时才接受设备推流（默认，省流量）
+      GATE_ENABLED: "${GATE_ENABLED:-1}"
+      PRESENCE_TTL: "${PRESENCE_TTL:-8}"
+      GATE_POLL_MS: "${GATE_POLL_MS:-2000}"
+      # 录制：单次最长秒数（默认 600=10 分钟）、设备掉线判定、回放帧率
+      RECORD_MAX_SECONDS: "${RECORD_MAX_SECONDS:-600}"
+      RECORD_OFFLINE_TIMEOUT: "${RECORD_OFFLINE_TIMEOUT:-8}"
+      RECORD_PLAY_FPS: "${RECORD_PLAY_FPS:-2}"
+      # 日期文件夹按哪个时区（容器多为 UTC，默认 +8 北京时间）
+      TZ_OFFSET_HOURS: "${TZ_OFFSET_HOURS:-8}"
       # JPEG 质量
       JPEG_QUALITY: "80"
       LOG_LEVEL: "INFO"
     volumes:
-      # 快照落盘：docker compose up -d 后宿主机 ./data 里就是图片
+      # 快照 + 录制都落在宿主机 ./data：./data/recordings/YYYY-MM-DD/*.mjpg
       - ./data:/data

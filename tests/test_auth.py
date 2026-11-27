@@ -17,6 +17,9 @@ os.environ["CAM_API_KEY"] = KEY
 os.environ["PROTECT_VIEW"] = "1"
 os.environ["ALLOW_KEY_IN_QUERY"] = "0"
 os.environ["COOKIE_SECURE"] = "0"
+# 本文件只测「鉴权」，关掉按需推流闸门，保持帧照常入库的原有语义。
+# 按需推流 / 录制的行为在 test_features.py 里单独覆盖。
+os.environ["GATE_ENABLED"] = "0"
 
 from fastapi.testclient import TestClient  # noqa: E402
 from app.main import app, store  # noqa: E402

@@ -27,6 +27,7 @@
   }
   .badge.on  { color: #6ee7a8; border-color: #2f6b4f; }
   .badge.off { color: #ff8f8f; border-color: #6b2f2f; }
+  .badge.wait{ color: #ffd479; border-color: #6b5a2f; }
   .gate {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     background: rgba(8, 11, 20, .93); padding: 16px; z-index: 2;
@@ -41,20 +42,56 @@
     border: 1px solid #2c3446; background: #101625; color: #e8ecf4; font-size: 14px;
   }
   .gate-card input:focus { outline: none; border-color: #4d7fd6; }
-  .gate-card button {
+  .btn {
     padding: 9px 16px; border-radius: 8px; border: 1px solid #3a63a8;
     background: #24457d; color: #eaf1ff; cursor: pointer; font-size: 14px;
   }
-  .gate-card button:hover { background: #2d53a0; }
+  .btn:hover { background: #2d53a0; }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn.rec   { background: #7d2430; border-color: #a83a48; }
+  .btn.rec:hover { background: #a02d3c; }
+  .btn.stop  { background: #4a4f5e; border-color: #6a7186; }
+  .btn.sm    { padding: 5px 10px; font-size: 12px; }
+  .btn.danger{ background: transparent; border-color: #5a3340; color: #ff9b9b; }
   .err { min-height: 20px; margin-top: 8px; color: #ff9b9b; font-size: 13px; }
   .hint { margin-top: 4px; color: #5d657a; font-size: 12px; line-height: 1.5; }
   .stats {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
     gap: 10px; margin-top: 14px;
   }
   .card { background: #131826; border: 1px solid #232a3a; border-radius: 10px; padding: 10px 12px; }
   .card .k { color: #8b93a7; font-size: 12px; }
   .card .v { font-size: 18px; font-variant-numeric: tabular-nums; }
+
+  .panel { background: #131826; border: 1px solid #232a3a; border-radius: 12px;
+           padding: 14px; margin-top: 14px; }
+  .panel h2 { margin: 0 0 10px; font-size: 15px; }
+  .recbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .rec-info { flex: 1; min-width: 160px; font-size: 13px; color: #b9c2d6; }
+  .rec-info b { color: #ff8f8f; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%;
+         background: #555c70; margin-right: 6px; vertical-align: middle; }
+  .dot.live { background: #ff4d5e; box-shadow: 0 0 8px #ff4d5e; animation: blink 1s infinite; }
+  @keyframes blink { 50% { opacity: .35; } }
+  .progress { height: 6px; background: #0d1120; border-radius: 4px; overflow: hidden;
+              margin-top: 10px; border: 1px solid #232a3a; }
+  .progress > i { display: block; height: 100%; width: 0;
+                  background: linear-gradient(90deg,#ff4d5e,#ff9b6a); transition: width .5s; }
+  .rec-foot { display: flex; justify-content: space-between; color: #6b7490;
+              font-size: 12px; margin-top: 5px; }
+  .notice { margin-top: 8px; font-size: 12px; color: #8b93a7; min-height: 16px; }
+
+  .day { margin-top: 12px; }
+  .day-h { display: flex; align-items: center; gap: 8px; color: #9fb0d0;
+           font-size: 13px; margin-bottom: 6px; }
+  .day-h .sp { flex: 1; border-bottom: 1px dashed #2a3145; }
+  .item { display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+          background: #0f1420; border: 1px solid #20283a; border-radius: 8px; margin-bottom: 6px; }
+  .item .meta { flex: 1; min-width: 0; font-size: 13px; }
+  .item .meta .t { color: #dfe6f5; font-variant-numeric: tabular-nums; }
+  .item .meta .d { color: #7c869d; font-size: 12px; }
+  .item .ops { display: flex; gap: 6px; flex-wrap: wrap; }
+  .empty { color: #6b7490; font-size: 13px; padding: 8px 2px; }
   .links { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .links a {
     color: #7fb2ff; text-decoration: none; border: 1px solid #26304a;
@@ -63,13 +100,23 @@
   .links a:hover { background: #182036; }
   .links.locked a:not(#logout) { opacity: .4; pointer-events: none; }
   #logout { display: none; color: #ffb4b4; border-color: #4a2b32; }
-  footer { margin-top: auto; padding: 18px; color: #5d657a; font-size: 12px; }
+  footer { margin-top: auto; padding: 18px; color: #5d657a; font-size: 12px; text-align: center; }
+
+  .modal { position: fixed; inset: 0; background: rgba(4,6,12,.9); z-index: 10;
+           display: none; align-items: center; justify-content: center; padding: 16px; }
+  .modal.show { display: flex; }
+  .modal-box { width: 100%; max-width: 720px; background: #10151f;
+               border: 1px solid #2a3348; border-radius: 12px; padding: 14px; }
+  .modal-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .modal-h h3 { margin: 0; font-size: 15px; flex: 1; }
+  .modal-box .screen { aspect-ratio: 4/3; }
+  .locked-panel { display: none; }
 </style>
 </head>
 <body>
 <header>
   <h1>📷 BiliMouse 摄像头推流</h1>
-  <div class="sub">ESP32-S3 · GC0308 · RGB565 → 服务端转 JPEG</div>
+  <div class="sub">ESP32-S3 · GC0308 · 按需推流 · 网页录屏</div>
 </header>
 
 <div class="wrap">
@@ -83,7 +130,7 @@
         <form id="login-form">
           <input id="key" type="password" placeholder="CAM_API_KEY"
                  autocomplete="off" spellcheck="false">
-          <button type="submit">解锁</button>
+          <button class="btn" type="submit">解锁</button>
         </form>
         <div class="err" id="err"></div>
         <div class="hint">密钥只用于换取一个 HttpOnly 会话 cookie，<br>不会写进 URL，也不会存在浏览器本地存储里。</div>
@@ -100,6 +147,31 @@
     <div class="card"><div class="k">观看人数</div><div class="v" id="s-viewers">-</div></div>
   </div>
 
+  <!-- 录屏控制 -->
+  <div id="recPanel" class="panel locked-panel">
+    <h2>● 录制推流 <span id="recMaxHint" class="hint" style="font-weight:normal"></span></h2>
+    <div class="recbar">
+      <button id="recBtn" class="btn rec">● 开始录制</button>
+      <div class="rec-info"><span id="recDot" class="dot"></span><span id="recState">未录制</span></div>
+    </div>
+    <div class="progress"><i id="recBar"></i></div>
+    <div class="rec-foot"><span id="recElapsed">00:00</span><span id="recRemain">最长 10:00</span></div>
+    <div id="recNotice" class="notice"></div>
+    <div class="hint">录制时设备才会被允许推流；单次最长 10 分钟，到点或设备掉线自动停止。
+      文件按日期存在服务端 data/recordings/，可用 <code>clean-recordings.sh</code> 一键清理。</div>
+  </div>
+
+  <!-- 录制列表 -->
+  <div id="listPanel" class="panel locked-panel">
+    <h2 style="display:flex;align-items:center;gap:10px;">
+      录制文件
+      <span style="flex:1"></span>
+      <button id="refreshBtn" class="btn sm stop">刷新</button>
+      <button id="clearBtn" class="btn sm danger">清空全部</button>
+    </h2>
+    <div id="recList"><div class="empty">加载中…</div></div>
+  </div>
+
   <div class="links" id="links">
     <a href="/api/snapshot.jpg" target="_blank">单帧 JPEG</a>
     <a href="/api/stream.mjpg" target="_blank">MJPEG 流</a>
@@ -108,7 +180,19 @@
   </div>
 </div>
 
-<footer>bilimouse-cam-server</footer>
+<footer>bilimouse-cam-server · 无人观看 / 未录制时设备自动待机，不浪费流量与算力</footer>
+
+<!-- 回放弹层 -->
+<div id="modal" class="modal">
+  <div class="modal-box">
+    <div class="modal-h">
+      <h3 id="modalTitle">回放</h3>
+      <button id="modalClose" class="btn sm stop">关闭</button>
+    </div>
+    <div class="screen"><img id="player" alt="回放画面"></div>
+    <div class="hint" style="margin-top:8px">循环回放中，速度按录制帧率近似还原。关闭即停止拉流。</div>
+  </div>
+</div>
 
 <script>
 const view   = document.getElementById('view');
@@ -118,13 +202,28 @@ const keyIn  = document.getElementById('key');
 const badge  = document.getElementById('badge');
 const links  = document.getElementById('links');
 const logout = document.getElementById('logout');
+const recPanel = document.getElementById('recPanel');
+const listPanel = document.getElementById('listPanel');
 let authed = false;
+let recording = false;
+let recMax = 600;
+let lastRecSig = '';
+
+function esc(s){ return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function mmss(sec){ sec = Math.max(0, Math.floor(sec||0));
+  return String(Math.floor(sec/60)).padStart(2,'0') + ':' + String(sec%60).padStart(2,'0'); }
+function humanSize(n){ if(n==null) return '-';
+  return n>1048576 ? (n/1048576).toFixed(1)+' MB' : (n/1024).toFixed(0)+' KB'; }
 
 function showGate(msg) {
   authed = false;
-  view.removeAttribute('src');           // 断开 MJPEG 长连接，别再发 401 请求
+  view.removeAttribute('src');
   gate.style.display = 'flex';
   links.classList.add('locked');
+  recPanel.classList.remove('locked-panel');
+  recPanel.style.opacity = '.4'; recPanel.style.pointerEvents = 'none';
+  listPanel.classList.remove('locked-panel');
+  listPanel.style.opacity = '.4'; listPanel.style.pointerEvents = 'none';
   logout.style.display = 'none';
   err.textContent = msg || '';
   badge.textContent = '🔒 未解锁';
@@ -136,9 +235,11 @@ function unlock() {
   gate.style.display = 'none';
   err.textContent = '';
   links.classList.remove('locked');
+  recPanel.style.opacity = '1'; recPanel.style.pointerEvents = 'auto';
+  listPanel.style.opacity = '1'; listPanel.style.pointerEvents = 'auto';
   logout.style.display = '';
-  // ?t= 只是防缓存，密钥不在 URL 里：靠 HttpOnly cookie 鉴权
   view.src = '/api/stream.mjpg?t=' + Date.now();
+  loadRecordings();
 }
 
 function render(s) {
@@ -147,8 +248,46 @@ function render(s) {
   document.getElementById('s-res').textContent    = s.width ? (s.width + '×' + s.height) : '-';
   document.getElementById('s-age').textContent    = s.age_seconds == null ? '-' : s.age_seconds + 's';
   document.getElementById('s-viewers').textContent = s.viewers;
-  badge.textContent = s.online ? '● 推流中' : '○ 等待设备';
-  badge.className = 'badge ' + (s.online ? 'on' : 'off');
+
+  const streaming = s.device_streaming;
+  const gateOn = s.push_gate;
+  if (streaming)      { badge.textContent = '● 推流中'; badge.className = 'badge on'; }
+  else if (gateOn)    { badge.textContent = '◌ 等待设备'; badge.className = 'badge wait'; }
+  else                { badge.textContent = '○ 省电待机'; badge.className = 'badge off'; }
+
+  // 录制状态
+  const r = s.recording || {};
+  recording = !!r.active;
+  recMax = r.max_seconds || recMax;
+  const dot = document.getElementById('recDot');
+  const btn = document.getElementById('recBtn');
+  const state = document.getElementById('recState');
+  const bar = document.getElementById('recBar');
+  const el = document.getElementById('recElapsed');
+  const rm = document.getElementById('recRemain');
+  document.getElementById('recMaxHint').textContent = '（单次最长 ' + mmss(recMax) + '）';
+  if (!authed) {
+    dot.className = 'dot'; state.textContent = '未录制';
+    btn.textContent = '● 开始录制'; btn.className = 'btn rec'; btn.disabled = true;
+    bar.style.width = '0%'; el.textContent = '00:00'; rm.textContent = '最长 ' + mmss(recMax);
+  } else if (recording) {
+    dot.className = 'dot live';
+    state.innerHTML = '<b>录制中</b> · ' + (r.frames||0) + ' 帧';
+    btn.textContent = '■ 停止录制'; btn.className = 'btn stop'; btn.disabled = false;
+    bar.style.width = Math.min(100, (r.elapsed/recMax)*100).toFixed(1) + '%';
+    el.textContent = mmss(r.elapsed); rm.textContent = '剩余 ' + mmss(r.remaining);
+  } else {
+    dot.className = 'dot'; state.textContent = '未录制';
+    btn.textContent = '● 开始录制'; btn.className = 'btn rec'; btn.disabled = false;
+    bar.style.width = '0%'; el.textContent = '00:00'; rm.textContent = '最长 ' + mmss(recMax);
+    if (r.last && r.last.stop_reason) {
+      const why = {max_duration:'已达 10 分钟上限', device_offline:'设备掉线', manual:'手动停止',
+                   deleted:'被删除', server_shutdown:'服务重启'}[r.last.stop_reason] || r.last.stop_reason;
+      document.getElementById('recNotice').textContent = '上次录制结束：' + why;
+      const sig = r.last.date + r.last.name + r.last.end;
+      if (sig && sig !== lastRecSig) { lastRecSig = sig; loadRecordings(); }
+    }
+  }
 }
 
 async function tick() {
@@ -159,13 +298,123 @@ async function tick() {
     if (r.status === 429) { showGate('尝试次数过多，请稍后再试'); return; }
     if (!r.ok) throw new Error('status ' + r.status);
     const s = await r.json();
-    if (!authed) unlock();   // 已有有效 cookie（或 PROTECT_VIEW=0）
+    if (!authed) unlock();
     render(s);
   } catch (e) {
     badge.textContent = '○ 服务未响应';
     badge.className = 'badge off';
   }
 }
+
+// 网页报活：只要页面开着就每 3s 打一次，服务端据此允许设备推流。
+async function heartbeat() {
+  try { await fetch('/api/presence', {method:'POST'}); } catch (e) {}
+}
+
+// ---- 录制控制 ----
+async function recToggle() {
+  const btn = document.getElementById('recBtn');
+  btn.disabled = true;
+  const notice = document.getElementById('recNotice');
+  try {
+    if (recording) {
+      const r = await fetch('/api/record/stop', {method:'POST'});
+      if (!r.ok) throw new Error('stop ' + r.status);
+      notice.textContent = '已停止录制';
+    } else {
+      const r = await fetch('/api/record/start', {method:'POST'});
+      if (r.status === 401) { showGate('会话已失效，请重新登录'); return; }
+      if (!r.ok) throw new Error('start ' + r.status);
+      notice.textContent = '开始录制，设备将被唤醒推流…';
+    }
+    lastRecSig = '';
+    await tick();
+    loadRecordings();
+  } catch (e) {
+    notice.textContent = '操作失败：' + e.message;
+  } finally { btn.disabled = false; }
+}
+
+// ---- 录制列表 ----
+async function loadRecordings() {
+  if (!authed) return;
+  const box = document.getElementById('recList');
+  try {
+    const r = await fetch('/api/recordings', {cache:'no-store'});
+    if (r.status === 401) { showGate('会话已失效，请重新登录'); return; }
+    if (!r.ok) throw new Error('list ' + r.status);
+    const data = await r.json();
+    const groups = data.groups || {};
+    const dates = Object.keys(groups).sort().reverse();
+    if (!dates.length) { box.innerHTML = '<div class="empty">还没有录制文件。点上面「开始录制」录一段吧。</div>'; return; }
+    let html = '';
+    for (const d of dates) {
+      html += '<div class="day"><div class="day-h">📅 ' + esc(d) +
+              ' <span class="sp"></span><button class="btn sm danger" data-deld="' + esc(d) + '">删除该日</button></div>';
+      for (const it of groups[d]) {
+        const nm = esc(it.name), dt = esc(d);
+        const t = it.name.replace(/^rec_/,'').replace(/\.mjpg$/,'').replace(/^(\d\d)(\d\d)(\d\d).*$/,'$1:$2:$3');
+        const dur = it.duration != null ? mmss(it.duration) : '-';
+        const sub = dur + ' · ' + humanSize(it.size) + ' · ' + (it.frames!=null?it.frames+' 帧':'?') +
+                    (it.stop_reason==='device_offline' ? ' · <span style="color:#ffb4b4">掉线自动停</span>' : '');
+        const base = '/api/recordings/' + encodeURIComponent(dt) + '/' + encodeURIComponent(nm);
+        html += '<div class="item"><div class="meta"><div class="t">' + esc(t) + '</div>' +
+                '<div class="d">' + sub + '</div></div><div class="ops">' +
+                '<button class="btn sm" data-play="' + base + '|' + esc(t) + '">回放</button>' +
+                '<a class="btn sm stop" href="' + base + '" download>下载</a>' +
+                '<button class="btn sm danger" data-del="' + base + '">删除</button>' +
+                '</div></div>';
+      }
+      html += '</div>';
+    }
+    box.innerHTML = html;
+  } catch (e) {
+    box.innerHTML = '<div class="empty">加载失败：' + esc(e.message) + '</div>';
+  }
+}
+
+function openPlayer(url, title) {
+  document.getElementById('modalTitle').textContent = '回放 · ' + title;
+  document.getElementById('player').src = url + '/play?loop=1&t=' + Date.now();
+  document.getElementById('modal').classList.add('show');
+}
+function closePlayer() {
+  document.getElementById('player').removeAttribute('src');
+  document.getElementById('modal').classList.remove('show');
+}
+
+document.getElementById('recBtn').addEventListener('click', recToggle);
+document.getElementById('refreshBtn').addEventListener('click', loadRecordings);
+document.getElementById('clearBtn').addEventListener('click', async () => {
+  if (!confirm('确定清空全部录制文件？此操作不可恢复。')) return;
+  try {
+    const r = await fetch('/api/recordings', {method:'DELETE'});
+    if (r.status === 401) { showGate('会话已失效，请重新登录'); return; }
+    document.getElementById('recNotice').textContent = r.ok ? '已清空全部录制' : ('清空失败 ' + r.status);
+    lastRecSig = ''; loadRecordings();
+  } catch (e) { document.getElementById('recNotice').textContent = '清空失败：' + e.message; }
+});
+
+document.getElementById('recList').addEventListener('click', async (e) => {
+  const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.play) { const [u,t] = b.dataset.play.split('|'); openPlayer(u, t); return; }
+  if (b.dataset.del) {
+    if (!confirm('删除这个录制文件？')) return;
+    try { const r = await fetch(b.dataset.del, {method:'DELETE'});
+          if (!r.ok) throw new Error('' + r.status); loadRecordings(); }
+    catch (er) { document.getElementById('recNotice').textContent = '删除失败：' + er.message; }
+  }
+  if (b.dataset.deld) {
+    if (!confirm('删除 ' + b.dataset.deld + ' 这一天的全部录制？')) return;
+    try { const r = await fetch('/api/recordings/' + encodeURIComponent(b.dataset.deld), {method:'DELETE'});
+          if (!r.ok) throw new Error('' + r.status); lastRecSig=''; loadRecordings(); }
+    catch (er) { document.getElementById('recNotice').textContent = '删除失败：' + er.message; }
+  }
+});
+document.getElementById('modalClose').addEventListener('click', closePlayer);
+document.getElementById('modal').addEventListener('click', e => {
+  if (e.target.id === 'modal') closePlayer();
+});
 
 document.getElementById('login-form').addEventListener('submit', async (e) => {
   e.preventDefault();
@@ -174,34 +423,27 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
   err.textContent = '验证中…';
   try {
     const r = await fetch('/api/login', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
+      method: 'POST', headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({key: key})
     });
-    if (r.ok) {
-      keyIn.value = '';
-      unlock();
-      tick();
-    } else if (r.status === 429) {
-      err.textContent = '尝试次数过多，请 60 秒后再试';
-    } else if (r.status === 503) {
-      err.textContent = '服务端未配置 CAM_API_KEY';
-    } else {
-      err.textContent = '密钥错误';
-    }
-  } catch (e) {
-    err.textContent = '连不上服务端';
-  }
+    if (r.ok) { keyIn.value = ''; unlock(); tick(); }
+    else if (r.status === 429) err.textContent = '尝试次数过多，请 60 秒后再试';
+    else if (r.status === 503) err.textContent = '服务端未配置 CAM_API_KEY';
+    else err.textContent = '密钥错误';
+  } catch (e) { err.textContent = '连不上服务端'; }
 });
 
 logout.addEventListener('click', async () => {
-  try { await fetch('/api/logout', {method: 'POST'}); } catch (e) {}
+  try { await fetch('/api/logout', {method:'POST'}); } catch (e) {}
   showGate('');
 });
 
 showGate('');
+heartbeat();
+setInterval(heartbeat, 3000);
 tick();
 setInterval(tick, 2000);
+setInterval(() => { if (authed && recording) loadRecordings(); }, 15000);
 </script>
 </body>
 </html>
