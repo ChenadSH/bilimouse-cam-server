@@ -39,8 +39,14 @@ die()  { printf '\033[1;31mxx \033[0m %s\n' "$*" >&2; exit 1; }
 trap 'rc=$?; printf "\033[1;31mxx \033[0m 脚本在第 %s 行失败 (exit %s)\n" "$LINENO" "$rc" >&2' ERR
 
 # .env 备份文件（更新前）。EXIT 时清理，绝不残留。
+# 清理失败（受限沙箱 / 只读临时目录）只该留个临时文件，不该把一次
+# 已经成功的更新判为失败，所以这里必须吞掉错误并显式返回 0。
 ENV_BAK=""
-cleanup_env_bak() { [[ -n "$ENV_BAK" && -f "$ENV_BAK" ]] && rm -f "$ENV_BAK"; return 0; }
+cleanup_env_bak() {
+    [[ -n "$ENV_BAK" && -f "$ENV_BAK" ]] || return 0
+    rm -f -- "$ENV_BAK" 2>/dev/null || true
+    return 0
+}
 trap cleanup_env_bak EXIT
 
 # 打印某个 .env 文件里 CAM_API_KEY 的短指纹（不泄露密钥明文），
@@ -138,7 +144,13 @@ fi
 # 有任何变化都无条件恢复成用户原来的那份。
 ENV_FP_BEFORE=""
 if [[ -f .env ]]; then
-    ENV_BAK="$(mktemp "${TMPDIR:-/tmp}/bilimouse-env.XXXXXX")" \
+    # Windows/Git Bash 的 TMPDIR 常是 "C:\Users\...\Temp"，生成的备份路径
+    # 带盘符，某些受限环境的删除钩子会拒绝；统一退回 MSYS 的 /tmp 更稳。
+    BAK_DIR="${TMPDIR:-/tmp}"
+    case "$BAK_DIR" in
+        *\\*|[A-Za-z]:*) BAK_DIR="/tmp" ;;
+    esac
+    ENV_BAK="$(mktemp "${BAK_DIR}/bilimouse-env.XXXXXX")" \
         || die "无法创建 .env 备份临时文件"
     cp -p .env "$ENV_BAK" || die "备份 .env 失败"
     ENV_FP_BEFORE="$(key_fingerprint .env)"
