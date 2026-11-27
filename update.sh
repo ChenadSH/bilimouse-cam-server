@@ -16,6 +16,7 @@
 #
 # 环境变量:
 #   HOST_PORT=39110        改端口请写进 .env，compose 和本脚本会同时跟随
+#   PUBLIC_URL=...         服务器对外地址（公网 IP/域名），用于打印设备端该填的 URL
 #   PORT=39110             临时覆盖「健康检查探测的宿主机端口」（一般不用设）
 #   CONTAINER_PORT=39110   容器内端口（宿主机没有 curl 时的兜底检查用）
 #   COMPOSE_FILE=...       指定 compose 文件（默认 docker-compose.yml）
@@ -209,14 +210,24 @@ if ((PRUNE)); then
     docker image prune -f | tail -n 3 || true
 fi
 
-LAN_IP=""
-if command -v hostname >/dev/null 2>&1; then
-    LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+# 设备端实际访问的地址：优先 .env 里的 PUBLIC_URL（云服务器填公网 IP/域名），
+# 没配才退回 hostname -I 的局域网 IP + HOST_PORT。
+if [[ -z "${PUBLIC_URL:-}" && -f .env ]]; then
+    PUBLIC_URL="$(sed -n 's/^[[:space:]]*PUBLIC_URL[[:space:]]*=[[:space:]]*//p' .env \
+                  | tail -n 1 | tr -d '\r' | sed 's/[[:space:]]*$//')" || PUBLIC_URL=""
 fi
-[[ -n "$LAN_IP" ]] || LAN_IP="<服务器IP>"
+if [[ -z "${PUBLIC_URL:-}" ]]; then
+    LAN_IP=""
+    if command -v hostname >/dev/null 2>&1; then
+        LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    fi
+    [[ -n "$LAN_IP" ]] || LAN_IP="<服务器IP>"
+    PUBLIC_URL="http://${LAN_IP}:${PORT}"
+fi
+PUBLIC_URL="${PUBLIC_URL%/}"
 
 log "更新完成，服务已就绪"
 printf '    本机预览 : http://127.0.0.1:%s/\n' "$PORT"
-printf '    设备端填 : http://%s:%s   （串口: cam url http://%s:%s）\n' \
-    "$LAN_IP" "$PORT" "$LAN_IP" "$PORT"
+printf '    设备端填 : %s   （串口: cam url %s）\n' "$PUBLIC_URL" "$PUBLIC_URL"
+printf '    改地址   : 服务端 .env 的 PUBLIC_URL / 固件 main/app/user_config.h\n'
 printf '    查看日志 : %s logs -f\n' "${COMPOSE[*]}"

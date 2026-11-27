@@ -137,6 +137,11 @@ chmod +x update.sh
 
 ## 设备端怎么连上
 
+> 设备端的**默认推流地址**写在固件仓库 `main/app/user_config.h` 的
+> `USER_CAM_SERVER_URL`（当前为 `http://124.221.91.97:39110/`），改完重新烧录即可。
+> 下面串口 `cam url` 是临时覆盖值，优先级更高，会存进 NVS。
+> 服务端 `.env` 的 `PUBLIC_URL` 只控制 `update.sh` 打印的提示文案。
+
 1. 先查出服务端所在机器的局域网 IP（设备和服务端要在同一个 WiFi）：
 
    ```bash
@@ -191,6 +196,7 @@ chmod +x update.sh
 |---|---|---|
 | `CAM_API_KEY` | **必填** | 推流密钥，设备端 `cam key` 要用同一个值；没配则 `/api/frame` 返回 503 |
 | `HOST_PORT` | `39110` | `.env` / compose 专用：宿主机对外端口，改它 compose 与 `update.sh` 同时跟随 |
+| `PUBLIC_URL` | 自动探测 | `.env` 专用：设备端实际访问的地址（公网 IP/域名），只影响 `update.sh` 打印的提示 |
 | `PIP_INDEX_URL` | 清华源 | `.env` / 构建专用：pip 镜像源，仅 `docker build` 时生效 |
 | `PROTECT_VIEW` | `1` | 观看端是否也要鉴权；设 `0` 仅用于可信内网调试 |
 | `ALLOW_KEY_IN_QUERY` | `0` | 允许 `?key=` 传密钥（VLC 等播放器用；URL 会进日志，谨慎开） |
