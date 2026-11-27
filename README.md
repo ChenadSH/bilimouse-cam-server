@@ -39,6 +39,48 @@ uvicorn app.main:app --reload --port 8080
 
 ---
 
+## 一键更新（部署机常用）
+
+服务跑起来后，代码有更新时在仓库根目录执行：
+
+```bash
+./update.sh
+```
+
+脚本依次做：`git fetch` + `git pull --ff-only` → 重新构建镜像 → 用新镜像重建容器 →
+轮询 `/healthz` 确认就绪 → 打印设备端要填的地址。Windows 上在 Git Bash 里执行
+`bash update.sh` 即可。
+
+首次部署到一台新机器：
+
+```bash
+git clone https://github.com/ChenadSH/bilimouse-cam-server.git
+cd bilimouse-cam-server
+chmod +x update.sh
+./update.sh
+```
+
+常用参数：
+
+| 参数 | 作用 |
+|---|---|
+| `--no-build` | 只拉代码并重启容器，跳过镜像构建（镜像没变时最快） |
+| `--down` | 先 `docker compose down` 再启动，彻底重建容器/网络 |
+| `--force` | 本地有改动时强制同步到远端（**会丢弃本地已跟踪的修改**） |
+| `--wait 60` | 健康检查最多等 60 秒（默认 30 秒） |
+| `--prune` | 完成后清理悬空镜像 |
+
+改过端口就带上环境变量，例如 `PORT=8090 ./update.sh`。要定时自动更新可以挂 cron：
+
+```cron
+0 4 * * * cd /srv/bilimouse-cam-server && ./update.sh >> update.log 2>&1
+```
+
+> 脚本只检查**已跟踪文件**的改动：`data/` 里运行时存的快照不会阻塞更新；
+> 但本地改过 `docker-compose.yml` 这类文件时会主动中止，避免被覆盖。
+
+---
+
 ## 设备端怎么连上
 
 1. 先查出服务端所在机器的局域网 IP（设备和服务端要在同一个 WiFi）：
