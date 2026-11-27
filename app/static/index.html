@@ -27,6 +27,27 @@
   }
   .badge.on  { color: #6ee7a8; border-color: #2f6b4f; }
   .badge.off { color: #ff8f8f; border-color: #6b2f2f; }
+  .gate {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    background: rgba(8, 11, 20, .93); padding: 16px; z-index: 2;
+  }
+  .gate-card { width: 100%; max-width: 340px; text-align: center; }
+  .gate-card .lock { font-size: 30px; margin-bottom: 6px; }
+  .gate-card h2 { margin: 0 0 4px; font-size: 17px; }
+  .gate-card p { margin: 0 0 14px; color: #8b93a7; font-size: 13px; }
+  .gate-card form { display: flex; gap: 8px; }
+  .gate-card input {
+    flex: 1; min-width: 0; padding: 9px 11px; border-radius: 8px;
+    border: 1px solid #2c3446; background: #101625; color: #e8ecf4; font-size: 14px;
+  }
+  .gate-card input:focus { outline: none; border-color: #4d7fd6; }
+  .gate-card button {
+    padding: 9px 16px; border-radius: 8px; border: 1px solid #3a63a8;
+    background: #24457d; color: #eaf1ff; cursor: pointer; font-size: 14px;
+  }
+  .gate-card button:hover { background: #2d53a0; }
+  .err { min-height: 20px; margin-top: 8px; color: #ff9b9b; font-size: 13px; }
+  .hint { margin-top: 4px; color: #5d657a; font-size: 12px; line-height: 1.5; }
   .stats {
     display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     gap: 10px; margin-top: 14px;
@@ -37,9 +58,11 @@
   .links { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
   .links a {
     color: #7fb2ff; text-decoration: none; border: 1px solid #26304a;
-    border-radius: 8px; padding: 7px 12px; font-size: 13px;
+    border-radius: 8px; padding: 7px 12px; font-size: 13px; cursor: pointer;
   }
   .links a:hover { background: #182036; }
+  .links.locked a:not(#logout) { opacity: .4; pointer-events: none; }
+  #logout { display: none; color: #ffb4b4; border-color: #4a2b32; }
   footer { margin-top: auto; padding: 18px; color: #5d657a; font-size: 12px; }
 </style>
 </head>
@@ -51,7 +74,21 @@
 
 <div class="wrap">
   <div class="screen">
-    <img id="view" src="/api/stream.mjpg" alt="摄像头画面">
+    <img id="view" alt="摄像头画面">
+    <div id="gate" class="gate">
+      <div class="gate-card">
+        <div class="lock">🔒</div>
+        <h2>需要密钥才能查看</h2>
+        <p>输入服务端 .env 里的 CAM_API_KEY</p>
+        <form id="login-form">
+          <input id="key" type="password" placeholder="CAM_API_KEY"
+                 autocomplete="off" spellcheck="false">
+          <button type="submit">解锁</button>
+        </form>
+        <div class="err" id="err"></div>
+        <div class="hint">密钥只用于换取一个 HttpOnly 会话 cookie，<br>不会写进 URL，也不会存在浏览器本地存储里。</div>
+      </div>
+    </div>
     <div id="badge" class="badge off">连接中…</div>
   </div>
 
@@ -63,34 +100,106 @@
     <div class="card"><div class="k">观看人数</div><div class="v" id="s-viewers">-</div></div>
   </div>
 
-  <div class="links">
+  <div class="links" id="links">
     <a href="/api/snapshot.jpg" target="_blank">单帧 JPEG</a>
     <a href="/api/stream.mjpg" target="_blank">MJPEG 流</a>
     <a href="/api/status" target="_blank">状态 JSON</a>
+    <a id="logout">退出登录</a>
   </div>
 </div>
 
 <footer>bilimouse-cam-server</footer>
 
 <script>
+const view   = document.getElementById('view');
+const gate   = document.getElementById('gate');
+const err    = document.getElementById('err');
+const keyIn  = document.getElementById('key');
+const badge  = document.getElementById('badge');
+const links  = document.getElementById('links');
+const logout = document.getElementById('logout');
+let authed = false;
+
+function showGate(msg) {
+  authed = false;
+  view.removeAttribute('src');           // 断开 MJPEG 长连接，别再发 401 请求
+  gate.style.display = 'flex';
+  links.classList.add('locked');
+  logout.style.display = 'none';
+  err.textContent = msg || '';
+  badge.textContent = '🔒 未解锁';
+  badge.className = 'badge off';
+}
+
+function unlock() {
+  authed = true;
+  gate.style.display = 'none';
+  err.textContent = '';
+  links.classList.remove('locked');
+  logout.style.display = '';
+  // ?t= 只是防缓存，密钥不在 URL 里：靠 HttpOnly cookie 鉴权
+  view.src = '/api/stream.mjpg?t=' + Date.now();
+}
+
+function render(s) {
+  document.getElementById('s-online').textContent  = s.online ? '在线' : '离线';
+  document.getElementById('s-total').textContent   = s.frames_total;
+  document.getElementById('s-res').textContent    = s.width ? (s.width + '×' + s.height) : '-';
+  document.getElementById('s-age').textContent    = s.age_seconds == null ? '-' : s.age_seconds + 's';
+  document.getElementById('s-viewers').textContent = s.viewers;
+  badge.textContent = s.online ? '● 推流中' : '○ 等待设备';
+  badge.className = 'badge ' + (s.online ? 'on' : 'off');
+}
+
 async function tick() {
   try {
     const r = await fetch('/api/status', {cache: 'no-store'});
+    if (r.status === 401) { showGate('会话已失效，请重新输入密钥'); return; }
+    if (r.status === 503) { showGate('服务端还没配置 CAM_API_KEY'); return; }
+    if (r.status === 429) { showGate('尝试次数过多，请稍后再试'); return; }
+    if (!r.ok) throw new Error('status ' + r.status);
     const s = await r.json();
-    document.getElementById('s-online').textContent = s.online ? '在线' : '离线';
-    document.getElementById('s-total').textContent = s.frames_total;
-    document.getElementById('s-res').textContent = s.width ? (s.width + '×' + s.height) : '-';
-    document.getElementById('s-age').textContent = s.age_seconds == null ? '-' : s.age_seconds + 's';
-    document.getElementById('s-viewers').textContent = s.viewers;
-    const b = document.getElementById('badge');
-    b.textContent = s.online ? '● 推流中' : '○ 等待设备';
-    b.className = 'badge ' + (s.online ? 'on' : 'off');
+    if (!authed) unlock();   // 已有有效 cookie（或 PROTECT_VIEW=0）
+    render(s);
   } catch (e) {
-    const b = document.getElementById('badge');
-    b.textContent = '○ 服务未响应';
-    b.className = 'badge off';
+    badge.textContent = '○ 服务未响应';
+    badge.className = 'badge off';
   }
 }
+
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const key = keyIn.value.trim();
+  if (!key) { err.textContent = '请输入密钥'; return; }
+  err.textContent = '验证中…';
+  try {
+    const r = await fetch('/api/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({key: key})
+    });
+    if (r.ok) {
+      keyIn.value = '';
+      unlock();
+      tick();
+    } else if (r.status === 429) {
+      err.textContent = '尝试次数过多，请 60 秒后再试';
+    } else if (r.status === 503) {
+      err.textContent = '服务端未配置 CAM_API_KEY';
+    } else {
+      err.textContent = '密钥错误';
+    }
+  } catch (e) {
+    err.textContent = '连不上服务端';
+  }
+});
+
+logout.addEventListener('click', async () => {
+  try { await fetch('/api/logout', {method: 'POST'}); } catch (e) {}
+  showGate('');
+});
+
+showGate('');
 tick();
 setInterval(tick, 2000);
 </script>

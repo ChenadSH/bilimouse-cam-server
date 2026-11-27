@@ -4,12 +4,21 @@ BiliMouse 摄像头推流服务端
 设备端（ESP32-S3 + GC0308）把 RGB565 原始帧 POST 到这里：
 
     POST /api/frame
+      X-Api-Key: <密钥>            ← 必填，与服务端 CAM_API_KEY 一致，否则 401
       Content-Type: application/octet-stream
       X-Frame-Format: rgb565
       X-Frame-Width: 320
       X-Frame-Height: 240
       X-Frame-Seq: 42
       <body = width*height*2 字节的 RGB565 像素>
+
+鉴权（CAM_API_KEY，必填）：
+    POST /api/frame            必须带 X-Api-Key（或 Authorization: Bearer）
+    GET  /api/*                默认也要密钥：网页登录拿 HttpOnly 签名 cookie，
+                               或直接带请求头（PROTECT_VIEW=0 可关闭观看鉴权）
+    POST /api/login            网页用密钥换 cookie
+    POST /api/logout           清 cookie
+    GET  /healthz              免密，Docker healthcheck 用
 
 服务端负责把原始像素转成 JPEG（设备端没有 JPEG 编码器，
 GC0308 只出 RGB565/YUV422），并提供：
@@ -25,6 +34,8 @@ GC0308 只出 RGB565/YUV422），并提供：
 """
 
 import asyncio
+import hashlib
+import hmac
 import io
 import logging
 import os
@@ -33,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from PIL import Image
 
@@ -47,6 +58,28 @@ SAVE_EVERY = int(os.environ.get("SAVE_EVERY", "0"))
 SNAPSHOT_DIR = Path(os.environ.get("SNAPSHOT_DIR", "/data"))
 JPEG_QUALITY = int(os.environ.get("JPEG_QUALITY", "80"))
 MAX_BODY = int(os.environ.get("MAX_BODY", str(4 * 1024 * 1024)))
+
+# ---------------- 鉴权配置 ----------------
+# 推流密钥（必填）：设备端用 X-Api-Key 请求头带上。
+# 没配置时服务能启动，但 /api/frame 一律 503，绝不放行匿名推流。
+CAM_API_KEY = os.environ.get("CAM_API_KEY", "").strip()
+# 观看端保护：默认开。设 0 则 /api/* 的 GET 免密（仅限可信内网调试）。
+PROTECT_VIEW = os.environ.get("PROTECT_VIEW", "1").lower() not in ("0", "false", "no")
+# 允许用 ?key= 传密钥（给 VLC 之类只能填 URL 的播放器用）。
+# 默认关：URL 会进浏览器历史和 uvicorn access log。
+ALLOW_KEY_IN_QUERY = os.environ.get("ALLOW_KEY_IN_QUERY", "0").lower() in ("1", "true", "yes")
+# 浏览器登录会话有效期（秒），默认 7 天
+SESSION_TTL = int(os.environ.get("SESSION_TTL", str(7 * 24 * 3600)))
+COOKIE_NAME = "cam_session"
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "0").lower() in ("1", "true", "yes")
+
+if not CAM_API_KEY:
+    LOG.error("CAM_API_KEY 未配置：/api/frame 将拒绝一切推流（503）。"
+              "请在 .env 中设置后重启容器")
+elif len(CAM_API_KEY) < 16:
+    LOG.warning("CAM_API_KEY 只有 %d 个字符，建议至少 16 位随机字符串", len(CAM_API_KEY))
+LOG.info("auth: push key %s, view protection %s",
+         "enabled" if CAM_API_KEY else "MISSING", "on" if PROTECT_VIEW else "off")
 
 
 @dataclass
@@ -110,7 +143,129 @@ class FrameStore:
 
 
 store = FrameStore()
-app = FastAPI(title="BiliMouse Camera Server", version="1.0.0")
+# 关掉自动生成的 /docs、/openapi.json：这是个内网摄像头服务，
+# 没必要把接口清单公开出去（也不影响任何业务接口）。
+app = FastAPI(title="BiliMouse Camera Server", version="1.1.0",
+              docs_url=None, redoc_url=None, openapi_url=None)
+
+
+# ---------------- 鉴权 ----------------
+# 简单的失败限速：同一 IP 60 秒内失败 20 次就先拒 429，拖慢暴力猜密钥。
+# 只记计数不记密钥；局域网规模下这张表很小。
+_FAILS: dict = {}
+MAX_FAILS = 20
+FAIL_WINDOW = 60.0
+
+
+def _client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _too_many_fails(ip: str) -> bool:
+    now = time.time()
+    cnt, first = _FAILS.get(ip, (0, now))
+    if now - first > FAIL_WINDOW:
+        cnt, first = 0, now
+        _FAILS[ip] = (cnt, first)
+    return cnt >= MAX_FAILS
+
+
+def _note_fail(ip: str) -> None:
+    now = time.time()
+    cnt, first = _FAILS.get(ip, (0, now))
+    if now - first > FAIL_WINDOW:
+        cnt, first = 0, now
+    _FAILS[ip] = (cnt + 1, first)
+    if len(_FAILS) > 1024:
+        for k, (_, t) in list(_FAILS.items()):
+            if now - t > FAIL_WINDOW:
+                _FAILS.pop(k, None)
+
+
+def _clear_fails(ip: str) -> None:
+    _FAILS.pop(ip, None)
+
+
+def _unauthorized() -> HTTPException:
+    return HTTPException(status_code=401, detail="unauthorized",
+                         headers={"WWW-Authenticate": "Bearer"})
+
+
+def _key_matches(candidate: Optional[str]) -> bool:
+    """常量时间比较，避免用响应耗时逐字节猜密钥。"""
+    if not CAM_API_KEY or not candidate:
+        return False
+    return hmac.compare_digest(candidate.strip(), CAM_API_KEY)
+
+
+def _key_from_request(request: Request) -> Optional[str]:
+    """优先级：X-Api-Key > Authorization: Bearer > ?key=（默认禁用）。"""
+    key = request.headers.get("x-api-key")
+    if not key:
+        auth = request.headers.get("authorization", "")
+        if auth.lower().startswith("bearer "):
+            key = auth[7:]
+    if not key and ALLOW_KEY_IN_QUERY:
+        key = request.query_params.get("key")
+    return key
+
+
+def _session_token() -> str:
+    """签发观看会话：exp.HMAC(key, "view|exp")。
+
+    cookie 里不含密钥本身，拿到 cookie 也推不了流；改了 CAM_API_KEY 后
+    旧会话立即失效。
+    """
+    exp = str(int(time.time()) + SESSION_TTL)
+    sig = hmac.new(CAM_API_KEY.encode("utf-8"),
+                   ("bilimouse-view|" + exp).encode("utf-8"),
+                   hashlib.sha256).hexdigest()
+    return exp + "." + sig
+
+
+def _session_valid(token: Optional[str]) -> bool:
+    if not CAM_API_KEY or not token or "." not in token:
+        return False
+    exp_s, sig = token.split(".", 1)
+    try:
+        exp = int(exp_s)
+    except ValueError:
+        return False
+    if exp <= int(time.time()):
+        return False
+    want = hmac.new(CAM_API_KEY.encode("utf-8"),
+                    ("bilimouse-view|" + exp_s).encode("utf-8"),
+                    hashlib.sha256).hexdigest()
+    return hmac.compare_digest(sig, want)
+
+
+async def require_push_key(request: Request) -> None:
+    """推流鉴权：必须在读 body 之前执行，未授权的大包不进内存。"""
+    if not CAM_API_KEY:
+        raise HTTPException(status_code=503,
+                            detail="server has no CAM_API_KEY configured")
+    ip = _client_ip(request)
+    if _too_many_fails(ip):
+        raise HTTPException(status_code=429, detail="too many auth failures")
+    if not _key_matches(_key_from_request(request)):
+        _note_fail(ip)
+        LOG.warning("rejected frame from %s: bad or missing API key", ip)
+        raise _unauthorized()
+    _clear_fails(ip)
+
+
+async def require_view_key(request: Request) -> None:
+    """观看鉴权：密钥请求头，或网页登录拿到的签名 cookie。"""
+    if not PROTECT_VIEW:
+        return
+    if not CAM_API_KEY:
+        raise HTTPException(status_code=503,
+                            detail="server has no CAM_API_KEY configured")
+    if _key_matches(_key_from_request(request)):
+        return
+    if _session_valid(request.cookies.get(COOKIE_NAME)):
+        return
+    raise _unauthorized()
 
 
 def rgb565_to_jpeg(raw: bytes, width: int, height: int) -> bytes:
@@ -131,6 +286,7 @@ def rgb565_to_jpeg(raw: bytes, width: int, height: int) -> bytes:
 @app.post("/api/frame")
 async def receive_frame(
     request: Request,
+    _auth=Depends(require_push_key),
     x_frame_format: str = Header(default="rgb565"),
     x_frame_width: int = Header(default=320),
     x_frame_height: int = Header(default=240),
@@ -172,7 +328,7 @@ async def receive_frame(
 
 
 @app.get("/api/snapshot.jpg")
-async def snapshot() -> Response:
+async def snapshot(request: Request, _auth=Depends(require_view_key)) -> Response:
     f = store.frame
     if f is None:
         raise HTTPException(status_code=404, detail="no frame yet")
@@ -181,7 +337,7 @@ async def snapshot() -> Response:
 
 
 @app.get("/api/status")
-async def status() -> JSONResponse:
+async def status(request: Request, _auth=Depends(require_view_key)) -> JSONResponse:
     f = store.frame
     return JSONResponse({
         "online": f is not None,
@@ -195,7 +351,7 @@ async def status() -> JSONResponse:
 
 
 @app.get("/api/stream.mjpg")
-async def stream(request: Request) -> StreamingResponse:
+async def stream(request: Request, _auth=Depends(require_view_key)) -> StreamingResponse:
     """MJPEG 视频流。多个观看者各自独立，服务端只保留最新一帧。"""
 
     async def gen():
@@ -226,6 +382,44 @@ async def stream(request: Request) -> StreamingResponse:
 
 # 当前正在看直播的人数
 VIEWERS = {"n": 0}
+
+
+@app.post("/api/login")
+async def login(request: Request) -> JSONResponse:
+    """网页登录：校验密钥后下发 HttpOnly 签名 cookie。
+
+    <img src="/api/stream.mjpg"> 没法带自定义请求头，所以浏览器走 cookie；
+    cookie 里是 HMAC 签名而不是密钥本身，拿到它也推不了流。
+    """
+    ip = _client_ip(request)
+    if _too_many_fails(ip):
+        raise HTTPException(status_code=429, detail="too many auth failures")
+    key = _key_from_request(request)
+    if not key:
+        try:
+            payload = await request.json()
+            key = str(payload.get("key", ""))
+        except Exception:
+            key = None
+    if not _key_matches(key):
+        _note_fail(ip)
+        LOG.warning("login failed from %s", ip)
+        raise _unauthorized()
+    _clear_fails(ip)
+    resp = JSONResponse({"ok": True, "ttl": SESSION_TTL})
+    resp.set_cookie(
+        COOKIE_NAME, _session_token(), max_age=SESSION_TTL,
+        httponly=True, samesite="lax", secure=COOKIE_SECURE, path="/",
+    )
+    return resp
+
+
+@app.post("/api/logout")
+async def logout() -> JSONResponse:
+    """清掉观看会话（只是删 cookie，不影响推流密钥）。"""
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(COOKIE_NAME, path="/")
+    return resp
 
 
 @app.get("/", response_class=HTMLResponse)

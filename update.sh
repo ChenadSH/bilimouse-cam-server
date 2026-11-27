@@ -85,6 +85,18 @@ fi
 BRANCH="$(git symbolic-ref --short HEAD 2>/dev/null || true)"
 [[ -n "$BRANCH" ]] || die "当前是 detached HEAD，请先切回 main 分支"
 
+# ---------- 密钥预检 ----------
+# .env 被 .gitignore 排除，git pull / --force 的 reset 都不会动它。
+# 但 compose 里写了 ${CAM_API_KEY:?...}，没配置会直接启动失败，先给个明白话。
+if [[ -z "${CAM_API_KEY:-}" ]]; then
+    [[ -f .env ]] || die "未找到 .env，无法启动服务。先执行: cp .env.example .env 并填写 CAM_API_KEY（设备端用 'cam key' 设成同一个值）"
+    grep -Eq '^[[:space:]]*CAM_API_KEY=[^#[:space:]]+' .env \
+        || die ".env 里没有有效的 CAM_API_KEY，请填写后重试"
+    if grep -q 'please-change-me' .env; then
+        warn ".env 里还是示例密钥，上线前请换成随机值"
+    fi
+fi
+
 # ---------- 拉取代码 ----------
 log "拉取远端更新（分支 $BRANCH）..."
 git fetch --prune origin
