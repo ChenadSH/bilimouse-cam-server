@@ -4,7 +4,9 @@
 #   拉取 origin 最新代码 -> 重新构建镜像 -> 用新镜像重启容器 -> 健康检查
 #
 # 用法:
-#   ./update.sh                 拉代码 + 重建镜像 + 重启 + 健康检查（默认）
+#   ./update.sh                 拉代码 + 按需重建镜像 + 重启 + 健康检查（默认）
+#                              有代码更新才重建镜像；没更新就直接重启，不碰网络
+#   ./update.sh --build         强制重新构建镜像（即使代码没有更新）
 #   ./update.sh --no-build      只拉代码并重启容器，不重建镜像（最快）
 #   ./update.sh --down          先 down 再 up，彻底重建容器和网络
 #   ./update.sh --force         本地有改动时强制同步远端（会丢弃本地已跟踪的修改）
@@ -17,6 +19,7 @@
 #   CONTAINER_PORT=8080    容器内端口（宿主机没有 curl 时的兜底检查用）
 #   COMPOSE_FILE=...       指定 compose 文件（默认 docker-compose.yml）
 #   SERVICE=cam-server     compose 里的服务名
+#   IMAGE=bilimouse-cam-server:latest   compose 构建出的镜像名（判断是否需要构建）
 # ==============================================================================
 set -Eeuo pipefail
 
@@ -33,14 +36,16 @@ trap 'rc=$?; printf "\033[1;31mxx \033[0m 脚本在第 %s 行失败 (exit %s)\n"
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-DO_BUILD=1
+FORCE_BUILD=0
+NO_BUILD=0
 DO_DOWN=0
 FORCE=0
 PRUNE=0
 WAIT_SECS=30
 while (($#)); do
     case "$1" in
-        --no-build) DO_BUILD=0 ;;
+        --build)    FORCE_BUILD=1 ;;
+        --no-build) NO_BUILD=1 ;;
         --down)     DO_DOWN=1 ;;
         --force)    FORCE=1 ;;
         --prune)    PRUNE=1 ;;
@@ -52,11 +57,15 @@ while (($#)); do
     shift
 done
 [[ "$WAIT_SECS" =~ ^[0-9]+$ ]] || die "--wait 需要正整数，收到: $WAIT_SECS"
+if ((FORCE_BUILD && NO_BUILD)); then
+    die "--build 和 --no-build 不能同时用"
+fi
 
 PORT="${PORT:-8080}"
 CONTAINER_PORT="${CONTAINER_PORT:-8080}"
 COMPOSE_FILE="${COMPOSE_FILE:-docker-compose.yml}"
 SERVICE="${SERVICE:-cam-server}"
+IMAGE="${IMAGE:-bilimouse-cam-server:latest}"
 
 # ---------- 环境自检 ----------
 command -v git >/dev/null 2>&1    || die "未找到 git"
@@ -101,14 +110,33 @@ else
 fi
 NEW="$(git rev-parse HEAD)"
 
+CHANGED=0
 if [[ "$OLD" == "$NEW" ]]; then
     log "代码已是最新 (${NEW:0:7})"
 else
+    CHANGED=1
     log "已更新 ${OLD:0:7} -> ${NEW:0:7}："
     git --no-pager log --oneline --no-decorate "$OLD..$NEW" | sed 's/^/    /' || true
 fi
 
-# ---------- 重建并重启服务 ----------
+# ---------- 决定是否重新构建镜像 ----------
+# 代码没变且本地已有镜像时跳过 build：避免每次都去 Docker Hub 拉基础镜像元数据
+# （国内网络常见 "Head ... EOF"），也让「只想重启服务」变成秒级操作。
+# 首次部署或代码有更新时才构建；--build / --no-build 可强制指定。
+if ((NO_BUILD)); then
+    DO_BUILD=0
+elif ((FORCE_BUILD)); then
+    DO_BUILD=1
+elif ((CHANGED)); then
+    DO_BUILD=1
+elif docker image inspect "$IMAGE" >/dev/null 2>&1; then
+    DO_BUILD=0
+    log "无代码更新且镜像已存在，跳过构建，直接重启容器"
+else
+    DO_BUILD=1
+    log "本地没有 $IMAGE，需要先构建镜像"
+fi
+
 UP_ARGS=(-d --force-recreate --remove-orphans)
 if ((DO_BUILD)); then
     UP_ARGS+=(--build)
@@ -119,8 +147,15 @@ if ((DO_DOWN)); then
     "${COMPOSE[@]}" down
 fi
 
-log "启动服务（build=$([[ $DO_BUILD == 1 ]] && echo yes || echo no)）..."
-"${COMPOSE[@]}" up "${UP_ARGS[@]}"
+if ((DO_BUILD)); then
+    BUILD_TXT=yes
+else
+    BUILD_TXT=no
+fi
+log "启动服务（build=$BUILD_TXT）..."
+if ! "${COMPOSE[@]}" up "${UP_ARGS[@]}"; then
+    die "启动失败。若日志里是 Docker Hub 拉 python:3.12-slim 超时（国内常见），可先手动 'docker pull python:3.12-slim'，或代码无更新时用 --no-build 直接重启"
+fi
 
 # ---------- 健康检查 ----------
 health_ok() {

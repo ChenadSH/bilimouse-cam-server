@@ -47,11 +47,14 @@ uvicorn app.main:app --reload --port 8080
 ./update.sh
 ```
 
-脚本依次做：`git fetch` + `git pull --ff-only` → 重新构建镜像 → 用新镜像重建容器 →
+脚本依次做：`git fetch` + `git pull --ff-only` → **按需**重新构建镜像 → 用新镜像重建容器 →
 轮询 `/healthz` 确认就绪 → 打印设备端要填的地址。Windows 上在 Git Bash 里执行
 `bash update.sh` 即可。
 
-首次部署到一台新机器：
+> 只有**拉到新代码**或本地还没有镜像时才会重新构建；代码没更新且镜像已存在时
+> 直接重启容器，秒级完成，也不会因为 Docker Hub 连不上而失败。
+
+首次部署到一台新机器（之后就只用 `./update.sh` 了）：
 
 ```bash
 git clone https://github.com/ChenadSH/bilimouse-cam-server.git
@@ -64,13 +67,15 @@ chmod +x update.sh
 
 | 参数 | 作用 |
 |---|---|
-| `--no-build` | 只拉代码并重启容器，跳过镜像构建（镜像没变时最快） |
+| `--build` | 强制重新构建镜像（即使代码没更新，改了 Dockerfile 时用） |
+| `--no-build` | 只拉代码并重启容器，跳过镜像构建（最快） |
 | `--down` | 先 `docker compose down` 再启动，彻底重建容器/网络 |
 | `--force` | 本地有改动时强制同步到远端（**会丢弃本地已跟踪的修改**） |
 | `--wait 60` | 健康检查最多等 60 秒（默认 30 秒） |
 | `--prune` | 完成后清理悬空镜像 |
 
-改过端口就带上环境变量，例如 `PORT=8090 ./update.sh`。要定时自动更新可以挂 cron：
+改过端口就带上环境变量，例如 `PORT=8090 ./update.sh`（另有 `COMPOSE_FILE`、
+`SERVICE`、`IMAGE` 可覆盖默认值）。要定时自动更新可以挂 cron：
 
 ```cron
 0 4 * * * cd /srv/bilimouse-cam-server && ./update.sh >> update.log 2>&1
