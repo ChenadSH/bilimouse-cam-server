@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BiliMouse 摄像头</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0b0e16; color: #e8ecf4;
+    font: 15px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    display: flex; flex-direction: column; align-items: center; min-height: 100vh;
+  }
+  header { padding: 18px 16px 6px; text-align: center; }
+  h1 { margin: 0 0 4px; font-size: 20px; letter-spacing: .5px; }
+  .sub { color: #8b93a7; font-size: 13px; }
+  .wrap { padding: 12px; width: 100%; max-width: 720px; }
+  .screen {
+    position: relative; background: #05070c; border: 1px solid #232a3a;
+    border-radius: 12px; overflow: hidden; aspect-ratio: 4 / 3;
+  }
+  .screen img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .badge {
+    position: absolute; top: 10px; left: 10px; padding: 3px 10px; border-radius: 20px;
+    font-size: 12px; background: rgba(0,0,0,.55); border: 1px solid #2c3446;
+  }
+  .badge.on  { color: #6ee7a8; border-color: #2f6b4f; }
+  .badge.off { color: #ff8f8f; border-color: #6b2f2f; }
+  .stats {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 10px; margin-top: 14px;
+  }
+  .card { background: #131826; border: 1px solid #232a3a; border-radius: 10px; padding: 10px 12px; }
+  .card .k { color: #8b93a7; font-size: 12px; }
+  .card .v { font-size: 18px; font-variant-numeric: tabular-nums; }
+  .links { margin-top: 14px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .links a {
+    color: #7fb2ff; text-decoration: none; border: 1px solid #26304a;
+    border-radius: 8px; padding: 7px 12px; font-size: 13px;
+  }
+  .links a:hover { background: #182036; }
+  footer { margin-top: auto; padding: 18px; color: #5d657a; font-size: 12px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📷 BiliMouse 摄像头推流</h1>
+  <div class="sub">ESP32-S3 · GC0308 · RGB565 → 服务端转 JPEG</div>
+</header>
+
+<div class="wrap">
+  <div class="screen">
+    <img id="view" src="/api/stream.mjpg" alt="摄像头画面">
+    <div id="badge" class="badge off">连接中…</div>
+  </div>
+
+  <div class="stats">
+    <div class="card"><div class="k">状态</div><div class="v" id="s-online">-</div></div>
+    <div class="card"><div class="k">总帧数</div><div class="v" id="s-total">-</div></div>
+    <div class="card"><div class="k">分辨率</div><div class="v" id="s-res">-</div></div>
+    <div class="card"><div class="k">最新帧延迟</div><div class="v" id="s-age">-</div></div>
+    <div class="card"><div class="k">观看人数</div><div class="v" id="s-viewers">-</div></div>
+  </div>
+
+  <div class="links">
+    <a href="/api/snapshot.jpg" target="_blank">单帧 JPEG</a>
+    <a href="/api/stream.mjpg" target="_blank">MJPEG 流</a>
+    <a href="/api/status" target="_blank">状态 JSON</a>
+  </div>
+</div>
+
+<footer>bilimouse-cam-server</footer>
+
+<script>
+async function tick() {
+  try {
+    const r = await fetch('/api/status', {cache: 'no-store'});
+    const s = await r.json();
+    document.getElementById('s-online').textContent = s.online ? '在线' : '离线';
+    document.getElementById('s-total').textContent = s.frames_total;
+    document.getElementById('s-res').textContent = s.width ? (s.width + '×' + s.height) : '-';
+    document.getElementById('s-age').textContent = s.age_seconds == null ? '-' : s.age_seconds + 's';
+    document.getElementById('s-viewers').textContent = s.viewers;
+    const b = document.getElementById('badge');
+    b.textContent = s.online ? '● 推流中' : '○ 等待设备';
+    b.className = 'badge ' + (s.online ? 'on' : 'off');
+  } catch (e) {
+    const b = document.getElementById('badge');
+    b.textContent = '○ 服务未响应';
+    b.className = 'badge off';
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

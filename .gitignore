@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# 运行时抓的快照
+data/*
+!data/.gitkeep

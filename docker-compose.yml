@@ -1,0 +1,20 @@
+services:
+  cam-server:
+    build: .
+    image: bilimouse-cam-server:latest
+    container_name: bilimouse-cam-server
+    restart: unless-stopped
+    ports:
+      # 左边是宿主机端口，右边是容器内端口。设备端要填「宿主机IP:8080」
+      - "8080:8080"
+    environment:
+      # 每 N 帧存一张到 /data（0 = 不存）
+      SAVE_EVERY: "0"
+      # 快照目录
+      SNAPSHOT_DIR: "/data"
+      # JPEG 质量
+      JPEG_QUALITY: "80"
+      LOG_LEVEL: "INFO"
+    volumes:
+      # 快照落盘：docker compose up -d 后宿主机 ./data 里就是图片
+      - ./data:/data
